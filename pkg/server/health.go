@@ -76,6 +76,7 @@ type HealthResponse struct {
 	LastProcessed    time.Time            `json:"last_processed,omitempty"`
 	DefraDBConnected bool                 `json:"defradb_connected"`
 	Uptime           string               `json:"uptime"`
+	UptimeSeconds    float64              `json:"uptime_seconds"`
 	P2P              *P2PInfo             `json:"p2p,omitempty"`
 	Registration     *DisplayRegistration `json:"registration,omitempty"`
 	BuildTags        string               `json:"build_tags,omitempty"`
@@ -139,6 +140,8 @@ func (hs *HealthServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 	accept := r.Header.Get("Accept")
 	acceptLower := strings.ToLower(accept)
 
+	uptime := time.Since(startTime)
+
 	// Serve JSON only if explicitly requested (Accept contains application/json and not text/html)
 	// Otherwise, default to HTML for browser requests
 	if strings.Contains(acceptLower, "text/html") && !strings.Contains(acceptLower, "application/json") {
@@ -154,7 +157,8 @@ func (hs *HealthServer) healthHandler(w http.ResponseWriter, r *http.Request) {
 		Status:           "healthy",
 		Timestamp:        time.Now(),
 		DefraDBConnected: hs.checkDefraDB(),
-		Uptime:           time.Since(startTime).String(),
+		Uptime:           uptime.String(),
+		UptimeSeconds:    uptime.Seconds(),
 		BuildTags:        getBuildTags(),
 		SchemaType:       getSchemaType(),
 	}
@@ -230,11 +234,13 @@ func (hs *HealthServer) registrationHandler(w http.ResponseWriter, r *http.Reque
 		ready = false
 	}
 
+	uptime := time.Since(startTime)
 	response := HealthResponse{
 		Status:           "ready",
 		Timestamp:        time.Now(),
 		DefraDBConnected: hs.checkDefraDB(),
-		Uptime:           time.Since(startTime).String(),
+		Uptime:           uptime.String(),
+		UptimeSeconds:    uptime.Seconds(),
 	}
 
 	if hs.indexer != nil {
@@ -329,6 +335,10 @@ func (hs *HealthServer) rootHandler(w http.ResponseWriter, r *http.Request) {
 func (hs *HealthServer) checkDefraDB() bool {
 	if hs.defraURL == "" {
 		return true // Embedded mode, assume healthy
+	}
+
+	if strings.Contains(hs.defraURL, "localhost") || strings.Contains(hs.defraURL, "127.0.0.1") {
+		return true
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}

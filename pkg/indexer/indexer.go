@@ -113,7 +113,13 @@ func toAppConfig(cfg *config.Config) *appConfig.Config {
 				EnableAutoReconnect: cfg.DefraDB.P2P.EnableAutoReconnect,
 			},
 			Store: appConfig.DefraStoreConfig{
-				Path: cfg.DefraDB.Store.Path,
+				Path:                    cfg.DefraDB.Store.Path,
+				BlockCacheMB:            cfg.DefraDB.Store.BlockCacheMB,
+				MemTableMB:              cfg.DefraDB.Store.MemTableMB,
+				IndexCacheMB:            cfg.DefraDB.Store.IndexCacheMB,
+				NumCompactors:           cfg.DefraDB.Store.NumCompactors,
+				NumLevelZeroTables:      cfg.DefraDB.Store.NumLevelZeroTables,
+				NumLevelZeroTablesStall: cfg.DefraDB.Store.NumLevelZeroTablesStall,
 			},
 		},
 	}
@@ -163,6 +169,15 @@ func (i *ChainIndexer) StartIndexing(defraStarted bool) error {
 		err = defra.WaitForDefraDB(actualDefraURL)
 		if err != nil {
 			return err
+		}
+
+		// Get the identity context for batch signing
+		identityCtx, err := appsdk.GetIdentityContext(ctx, appCfg)
+		if err != nil {
+			logger.Sugar.Warnf("Failed to get identity context for batch signing: %v (batch signatures may not work)", err)
+		} else {
+			ctx = identityCtx
+			logger.Sugar.Info("Identity context initialized for batch signing")
 		}
 
 	} else {
@@ -230,21 +245,28 @@ func (i *ChainIndexer) StartIndexing(defraStarted bool) error {
 	// Get starting block number
 	nextBlockToProcess := int64(cfg.Indexer.StartHeight)
 
-	// Start health server
-	var healthDefraURL string
-	if cfg.DefraDB.Url != "" {
-		healthDefraURL = cfg.DefraDB.Url
-	} else if i.defraNode != nil {
-		healthDefraURL = fmt.Sprintf("http://localhost:%d", defra.GetPort(i.defraNode))
-	}
-	i.healthServer = server.NewHealthServer(8080, i, healthDefraURL)
-
-	// Start health server in background
-	go func() {
-		if err := i.healthServer.Start(); err != nil {
-			logger.Sugar.Errorf("Health server failed: %v", err)
+	if cfg.Indexer.HealthServerPort > 0 {
+		var healthDefraURL string
+		if cfg.DefraDB.Url != "" {
+			healthDefraURL = cfg.DefraDB.Url
+		} else if i.defraNode != nil {
+			healthDefraURL = fmt.Sprintf("http://localhost:%d", defra.GetPort(i.defraNode))
 		}
-	}()
+		i.healthServer = server.NewHealthServer(cfg.Indexer.HealthServerPort, i, healthDefraURL)
+
+		go func() {
+			if err := i.healthServer.Start(); err != nil {
+				logger.Sugar.Errorf("Health server failed: %v", err)
+			}
+		}()
+
+		if cfg.Indexer.OpenBrowserOnStart {
+			go func() {
+				time.Sleep(2 * time.Second)
+				openBrowser(fmt.Sprintf("http://localhost:%d/health", cfg.Indexer.HealthServerPort))
+			}()
+		}
+	}
 
 	// Wait a moment for the server to start, then open the browser
 	go func() {
@@ -253,9 +275,9 @@ func (i *ChainIndexer) StartIndexing(defraStarted bool) error {
 	}()
 
 	// Use concurrent processing if configured and using embedded DefraDB
-	if cfg.Indexer.ConcurrentBlocks > 1 && i.defraNode != nil {
-		logger.Sugar.Infof("Using concurrent block processing with %d workers, %d prefetch buffer",
-			cfg.Indexer.ConcurrentBlocks, cfg.Indexer.PrefetchBlocks)
+	if cfg.Indexer.ConcurrentBlocks >= 1 && i.defraNode != nil {
+		logger.Sugar.Infof("Using concurrent block processing with %d workers",
+			cfg.Indexer.ConcurrentBlocks)
 		return i.runConcurrentIndexing(ctx, client, blockHandler, nextBlockToProcess, cfg)
 	}
 
@@ -319,20 +341,15 @@ func (i *ChainIndexer) runConcurrentIndexing(
 	i.shouldIndex = true
 	i.isStarted = true
 
-	prefetcher := NewBlockPrefetcher(
-		client,
-		cfg.Indexer.PrefetchBlocks,
-		cfg.Indexer.ReceiptWorkers,
-	)
-	prefetcher.Start(startBlock)
-	defer prefetcher.Stop()
-
 	processor := NewConcurrentBlockProcessor(
 		blockHandler,
+		client,
 		cfg.Indexer.ConcurrentBlocks,
+		cfg.Indexer.ReceiptWorkers,
+		cfg.Indexer.BlocksPerMinute,
 	)
 
-	return processor.ProcessBlocks(ctx, prefetcher, startBlock, func(blockNum int64) {
+	return processor.ProcessBlocks(ctx, startBlock, func(blockNum int64) {
 		i.updateBlockInfo(blockNum)
 		i.hasIndexedAtLeastOneBlock = true
 	})
@@ -344,7 +361,7 @@ func (i *ChainIndexer) processBlock(ctx context.Context, ethClient *rpc.Ethereum
 	var err error
 
 	// Retry logic for fetching block from Ethereum
-	for attempt := 0; attempt < DefaultRetryAttempts; attempt++ {
+	for attempt := range DefaultRetryAttempts {
 		block, err = ethClient.GetBlockByNumber(ctx, big.NewInt(blockNum))
 		if err == nil {
 			break
@@ -412,7 +429,7 @@ func (i *ChainIndexer) processBlockBatch(ctx context.Context, ethClient *rpc.Eth
 	}
 
 	var err error
-	for attempt := 0; attempt < DefaultRetryAttempts; attempt++ {
+	for attempt := range DefaultRetryAttempts {
 		_, err = blockHandler.CreateBlockBatch(ctx, block, transactions, receipts)
 		if err == nil {
 			break
@@ -445,7 +462,7 @@ func (i *ChainIndexer) processSingleBlock(ctx context.Context, ethClient *rpc.Et
 	var blockId string
 
 	// Retry logic for storing block in DefraDB
-	for attempt := 0; attempt < DefaultRetryAttempts; attempt++ {
+	for attempt := range DefaultRetryAttempts {
 		blockId, err = blockHandler.CreateBlock(ctx, block)
 		if err == nil {
 			break
@@ -503,7 +520,7 @@ func (i *ChainIndexer) processTransaction(ctx context.Context, ethClient *rpc.Et
 	// Retry logic for creating transaction
 	var txId string
 	var txErr error
-	for attempt := 0; attempt < DefaultRetryAttempts; attempt++ {
+	for attempt := range DefaultRetryAttempts {
 		txId, txErr = blockHandler.CreateTransaction(ctx, tx, blockId)
 		if txErr == nil {
 			break
@@ -528,9 +545,12 @@ func (i *ChainIndexer) processTransaction(ctx context.Context, ethClient *rpc.Et
 		return
 	}
 
-	// Store access list entries for EIP-2930/EIP-1559 transactions
+	// Store access list entries
+	blockNumStr := strings.TrimPrefix(tx.BlockNumber, "0x")
+	blockNumBig, _ := new(big.Int).SetString(blockNumStr, 16)
+	blockNum := blockNumBig.Int64()
 	for _, accessListEntry := range tx.AccessList {
-		_, err := blockHandler.CreateAccessListEntry(ctx, &accessListEntry, txId)
+		_, err := blockHandler.CreateAccessListEntry(ctx, &accessListEntry, txId, blockNum)
 		if err != nil {
 			logger.Sugar.Errorf("Failed to create access list entry for tx %s: %v", tx.Hash, err)
 			continue
@@ -547,19 +567,6 @@ func (i *ChainIndexer) processTransaction(ctx context.Context, ethClient *rpc.Et
 	}
 
 	logger.Sugar.Infof("Processed transaction %s with %d access list entries and %d logs", tx.Hash, len(tx.AccessList), len(receipt.Logs))
-}
-
-// parseBlockNumber converts hex string to int64
-func parseBlockNumber(hexStr string) (int64, error) {
-	if strings.HasPrefix(hexStr, "0x") {
-		blockNum := new(big.Int)
-		blockNum.SetString(hexStr[2:], 16)
-		return blockNum.Int64(), nil
-	}
-
-	blockNum := new(big.Int)
-	blockNum.SetString(hexStr, 10)
-	return blockNum.Int64(), nil
 }
 
 func (i *ChainIndexer) StopIndexing() {
