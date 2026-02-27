@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/joho/godotenv"
+	"github.com/shinzonetwork/shinzo-app-sdk/pkg/pruner"
 	"gopkg.in/yaml.v3"
 )
 
@@ -34,6 +35,8 @@ type DefraDBStoreConfig struct {
 	NumCompactors           int `yaml:"num_compactors"`
 	NumLevelZeroTables      int `yaml:"num_level_zero_tables"`
 	NumLevelZeroTablesStall int `yaml:"num_level_zero_tables_stall"`
+	// Badger value log configuration
+	ValueLogFileSizeMB int64 `yaml:"value_log_file_size_mb"` // Size of each vlog file (default 64MB)
 }
 
 // DefraDBConfig represents DefraDB configuration
@@ -65,7 +68,6 @@ type IndexerConfig struct {
 	MaxDocsPerTxn      int  `yaml:"max_docs_per_txn"`
 	BlocksPerMinute    int  `yaml:"blocks_per_minute"`
 	HealthServerPort   int  `yaml:"health_server_port"`
-	PprofPort          int  `yaml:"pprof_port"`
 	OpenBrowserOnStart bool `yaml:"open_browser_on_start"`
 }
 
@@ -79,6 +81,7 @@ type Config struct {
 	DefraDB DefraDBConfig `yaml:"defradb"`
 	Geth    GethConfig    `yaml:"geth"`
 	Indexer IndexerConfig `yaml:"indexer"`
+	Pruner  pruner.Config `yaml:"pruner"`
 	Logger  LoggerConfig  `yaml:"logger"`
 }
 
@@ -126,9 +129,8 @@ func applyDefaults(cfg *Config) {
 	if cfg.Indexer.HealthServerPort == 0 {
 		cfg.Indexer.HealthServerPort = 8080
 	}
-	if cfg.Indexer.PprofPort == 0 {
-		cfg.Indexer.PprofPort = 6060
-	}
+	// Pruner defaults
+	cfg.Pruner.SetDefaults()
 }
 
 // validateConfig validates the configuration
@@ -249,11 +251,38 @@ func applyEnvOverrides(cfg *Config) {
 			cfg.Indexer.BlocksPerMinute = n
 		}
 	}
+	if healthPort := os.Getenv("INDEXER_HEALTH_SERVER_PORT"); healthPort != "" {
+		if n, err := strconv.Atoi(healthPort); err == nil {
+			cfg.Indexer.HealthServerPort = n
+		}
+	}
 
 	// Logger configuration
 	if loggerDebug := os.Getenv("LOGGER_DEBUG"); loggerDebug != "" {
 		if debug, err := strconv.ParseBool(loggerDebug); err == nil {
 			cfg.Logger.Development = debug
+		}
+	}
+
+	// Pruner configuration
+	if prunerEnabled := os.Getenv("PRUNER_ENABLED"); prunerEnabled != "" {
+		if enabled, err := strconv.ParseBool(prunerEnabled); err == nil {
+			cfg.Pruner.Enabled = enabled
+		}
+	}
+	if prunerMaxBlocks := os.Getenv("PRUNER_MAX_BLOCKS"); prunerMaxBlocks != "" {
+		if n, err := strconv.ParseInt(prunerMaxBlocks, 10, 64); err == nil {
+			cfg.Pruner.MaxBlocks = n
+		}
+	}
+	if prunerThreshold := os.Getenv("PRUNER_PRUNE_THRESHOLD"); prunerThreshold != "" {
+		if n, err := strconv.ParseInt(prunerThreshold, 10, 64); err == nil {
+			cfg.Pruner.PruneThreshold = n
+		}
+	}
+	if prunerInterval := os.Getenv("PRUNER_INTERVAL_SECONDS"); prunerInterval != "" {
+		if n, err := strconv.Atoi(prunerInterval); err == nil {
+			cfg.Pruner.IntervalSeconds = n
 		}
 	}
 }

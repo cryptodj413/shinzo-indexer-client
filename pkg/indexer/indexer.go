@@ -9,11 +9,13 @@ import (
 	"math/big"
 	"net/http"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/shinzonetwork/shinzo-app-sdk/pkg/pruner"
 	"github.com/shinzonetwork/shinzo-indexer-client/config"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/constants"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/defra"
@@ -55,6 +57,7 @@ type ChainIndexer struct {
 	defraNode                 *node.Node             // Embedded DefraDB node (nil if using external)
 	networkHandler            *appsdk.NetworkHandler // P2P network handler (nil if using external)
 	healthServer              *server.HealthServer
+	pruner                    *pruner.Pruner // Document pruner for removing old blocks
 	currentBlock              int64
 	lastProcessedTime         time.Time
 	mutex                     sync.RWMutex
@@ -190,49 +193,82 @@ func (i *ChainIndexer) StartIndexing(defraStarted bool) error {
 		}
 	}
 
-	var blockHandler *defra.BlockHandler
-	var blockHandlerErr error
-	if !defraStarted && i.defraNode != nil {
-		blockHandler, blockHandlerErr = defra.NewBlockHandlerWithNode(i.defraNode, cfg.Indexer.MaxDocsPerTxn)
-		if blockHandlerErr != nil {
-			return fmt.Errorf("failed to create block handler with node: %v", blockHandlerErr)
-		}
-		logger.Sugar.Infof("Using direct DB access for embedded DefraDB (maxDocsPerTxn=%d)", cfg.Indexer.MaxDocsPerTxn)
-	} else {
-		blockHandler, blockHandlerErr = defra.NewBlockHandler(cfg.DefraDB.Url)
-		if blockHandlerErr != nil {
-			return fmt.Errorf("failed to create block handler for block check: %v", blockHandlerErr)
-		}
-		logger.Sugar.Info("Using HTTP access for external DefraDB")
+	if i.defraNode == nil {
+		return fmt.Errorf("defraNode is required - external DefraDB via HTTP is no longer supported")
 	}
 
-	startHeight := int64(cfg.Indexer.StartHeight)
-
-	nBlock, err := blockHandler.GetHighestBlockNumber(ctx)
+	blockHandler, err := defra.NewBlockHandler(i.defraNode, cfg.Indexer.MaxDocsPerTxn)
 	if err != nil {
-		// if error.
-		// If no blocks exist, start from configured start height (error is expected)
-		logger.Sugar.Info("No existing blocks found, starting from configured height")
-	} else if nBlock > 0 && nBlock > startHeight {
-		// if nBlock is greater than startHeight; use block from defra
-		// if yes increment by 1
-		cfg.Indexer.StartHeight = int(nBlock + 1)
-		logger.Sugar.Infof("Found existing blocks up to %d, starting from %d", nBlock, cfg.Indexer.StartHeight)
-	} else {
-		// if nBlock is less than startHeight
-		logger.Sugar.Infof("No existing blocks found, starting from configured height")
+		return fmt.Errorf("failed to create block handler: %v", err)
 	}
+	logger.Sugar.Infof("Using direct DB access for embedded DefraDB (maxDocsPerTxn=%d)", cfg.Indexer.MaxDocsPerTxn)
 
-	// create indexing bool
-	i.shouldIndex = true
-
-	// Connect to Ethereum client with WebSocket and HTTP support
+	// Connect to Ethereum client early — needed for latest block query and indexing
 	client, err := rpc.NewEthereumClient(cfg.Geth.NodeURL, cfg.Geth.WsURL, cfg.Geth.APIKey)
 	if err != nil {
 		logCtx := errors.LogContext(err)
 		logger.Sugar.With(logCtx).Fatalf("Failed to connect to Ethereum client: %v", err)
 	}
 	defer client.Close()
+
+	// Determine start height: DB state takes priority, then config, then latest chain block
+	configuredHeight := int64(cfg.Indexer.StartHeight)
+	var highestExisting int64
+	var pruneQueue *pruner.IndexerQueue
+
+	if cfg.Pruner.Enabled {
+		pruneQueue = pruner.NewIndexerQueue()
+		queueFilePath := filepath.Join(cfg.DefraDB.Store.Path, "prune_queue.gob")
+		if loaded, err := pruneQueue.LoadFromFile(queueFilePath); err != nil {
+			logger.Sugar.Warnf("Failed to load prune queue from disk: %v", err)
+		} else if loaded > 0 {
+			logger.Sugar.Infof("Restored %d entries from prune queue file", loaded)
+		}
+		highestExisting = pruneQueue.HighestBlockNumber()
+	}
+
+	if highestExisting == 0 {
+		nBlock, err := blockHandler.GetHighestBlockNumber(ctx)
+		if err != nil {
+			logger.Sugar.Debugf("No existing blocks found in DB: %v", err)
+		} else {
+			highestExisting = nBlock
+		}
+	}
+
+	// Query chain tip — used for gap detection and fresh-start fallback
+	latestBlock, err := client.GetLatestBlockNumber(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get latest block number from RPC: %w", err)
+	}
+	chainTip := latestBlock.Int64()
+
+	const startBuffer = 100 // start this many blocks before chain tip when skipping ahead
+
+	if highestExisting > 0 {
+		resumeFrom := highestExisting + 1
+		gap := chainTip - highestExisting
+		if gap > startBuffer {
+			// Too far behind (e.g. VM was down) — skip ahead to near chain tip
+			resumeFrom = chainTip - startBuffer
+			logger.Sugar.Infof("Gap of %d blocks, skipping ahead to %d (chain tip: %d)", gap, resumeFrom, chainTip)
+		}
+		cfg.Indexer.StartHeight = int(resumeFrom)
+		logger.Sugar.Infof("Resuming from block %d (highest existing: %d, chain tip: %d)", cfg.Indexer.StartHeight, highestExisting, chainTip)
+	} else if configuredHeight > 0 {
+		// DB is empty, specific start height configured — use it
+		logger.Sugar.Infof("Starting from configured height %d (chain tip: %d)", configuredHeight, chainTip)
+	} else {
+		// DB is empty, no start height — start near chain tip
+		cfg.Indexer.StartHeight = int(chainTip - startBuffer)
+		if cfg.Indexer.StartHeight < 0 {
+			cfg.Indexer.StartHeight = 0
+		}
+		logger.Sugar.Infof("No existing blocks, starting from %d (chain tip: %d)", cfg.Indexer.StartHeight, chainTip)
+	}
+
+	// create indexing bool
+	i.shouldIndex = true
 
 	// Reuse the block handler created earlier for processing
 	// (blockHandler was already created above for the block check)
@@ -259,9 +295,27 @@ func (i *ChainIndexer) StartIndexing(defraStarted bool) error {
 
 		if cfg.Indexer.OpenBrowserOnStart {
 			go func() {
-				time.Sleep(2 * time.Second)
+				time.Sleep(500 * time.Millisecond) // Give the server time to start
 				openBrowser(fmt.Sprintf("http://localhost:%d/health", cfg.Indexer.HealthServerPort))
+				logger.Sugar.Infof("Opened health page in browser")
 			}()
+		}
+	}
+
+	if cfg.Pruner.Enabled && i.defraNode != nil {
+		i.pruner = pruner.NewPruner(&cfg.Pruner, i.defraNode)
+
+		// pruneQueue was already created and loaded in the resume logic above
+		if pruneQueue == nil {
+			pruneQueue = pruner.NewIndexerQueue()
+		}
+
+		i.pruner.SetQueue(pruneQueue)
+		blockHandler.SetDocIDTracker(&indexerQueueTracker{queue: pruneQueue})
+		logger.Sugar.Infof("Prune queue ready (queue=%d, max_blocks=%d)", pruneQueue.Len(), cfg.Pruner.MaxBlocks)
+
+		if err := i.pruner.Start(ctx); err != nil {
+			logger.Sugar.Warnf("Failed to start pruner: %v", err)
 		}
 	}
 
@@ -369,11 +423,7 @@ func (i *ChainIndexer) processBlock(ctx context.Context, ethClient *rpc.Ethereum
 		return fmt.Errorf("failed to fetch block %d after %d attempts: %w", blockNum, DefaultRetryAttempts, err)
 	}
 
-	if i.defraNode != nil {
-		return i.processBlockBatch(ctx, ethClient, blockHandler, block, blockNum)
-	}
-
-	return i.processSingleBlock(ctx, ethClient, blockHandler, block, blockNum)
+	return i.processBlockBatch(ctx, ethClient, blockHandler, block, blockNum)
 }
 
 // processBlockBatch creates all documents for a block using optimized batch mutations.
@@ -427,7 +477,10 @@ func (i *ChainIndexer) processBlockBatch(ctx context.Context, ethClient *rpc.Eth
 		}
 
 		if strings.Contains(err.Error(), "already exists") {
-			logger.Sugar.Infof("Block %d already exists in DefraDB, skipping...", blockNum)
+			// Block exists via P2P, but we still need to sign it with our identity
+			if _, signErr := blockHandler.CreateBatchSignatureForExistingBlock(ctx, blockNum, block.Hash, block, transactions, receipts); signErr != nil {
+				logger.Sugar.Warnf("Block %d: failed to create batch signature for existing block: %v", blockNum, signErr)
+			}
 			return nil
 		}
 
@@ -447,122 +500,15 @@ func (i *ChainIndexer) processBlockBatch(ctx context.Context, ethClient *rpc.Eth
 	return nil
 }
 
-// processSingleBlock creates documents one at a time
-func (i *ChainIndexer) processSingleBlock(ctx context.Context, ethClient *rpc.EthereumClient, blockHandler *defra.BlockHandler, block *types.Block, blockNum int64) error {
-	var err error
-	var blockId string
-
-	// Retry logic for storing block in DefraDB
-	for attempt := range DefaultRetryAttempts {
-		blockId, err = blockHandler.CreateBlock(ctx, block)
-		if err == nil {
-			break
-		}
-
-		// Handle duplicate block - skip if already exists
-		if strings.Contains(err.Error(), "already exists") {
-			logger.Sugar.Infof("Block %d already exists in DefraDB, skipping...", blockNum)
-			return nil
-		}
-
-		if attempt < DefaultRetryAttempts-1 {
-			retryDelay := time.Duration(attempt+1) * time.Second
-			logger.Sugar.Warnf("Failed to create block %d in DefraDB (attempt %d/%d): %v, retrying in %v",
-				blockNum, attempt+1, DefaultRetryAttempts, err, retryDelay)
-			time.Sleep(retryDelay)
-		}
-	}
-	if err != nil {
-		return fmt.Errorf("failed to create block %d in DefraDB after %d attempts: %w", blockNum, DefaultRetryAttempts, err)
-	}
-
-	// Check if schema uses branchable collections - requires sequential processing
-	if schema.IsBranchable() {
-		// Process transactions sequentially to avoid transaction conflicts with branchable collections
-		for idx := range block.Transactions {
-			tx := block.Transactions[idx]
-			i.processTransaction(ctx, ethClient, blockHandler, &tx, blockId)
-		}
-	} else {
-		// Process transactions in parallel for better performance (non-branchable)
-		var wg sync.WaitGroup
-		txSemaphore := make(chan struct{}, 20)
-
-		for idx := range block.Transactions {
-			tx := block.Transactions[idx]
-			wg.Add(1)
-			go func(tx types.Transaction) {
-				defer wg.Done()
-				txSemaphore <- struct{}{}
-				defer func() { <-txSemaphore }()
-				i.processTransaction(ctx, ethClient, blockHandler, &tx, blockId)
-			}(tx)
-		}
-		wg.Wait()
-	}
-
-	logger.Sugar.Infof("Successfully processed block %d with %d transactions", blockNum, len(block.Transactions))
-	i.updateBlockInfo(blockNum)
-	return nil
-}
-
-// processTransaction handles a single transaction with its logs and access list entries
-func (i *ChainIndexer) processTransaction(ctx context.Context, ethClient *rpc.EthereumClient, blockHandler *defra.BlockHandler, tx *types.Transaction, blockId string) {
-	// Retry logic for creating transaction
-	var txId string
-	var txErr error
-	for attempt := range DefaultRetryAttempts {
-		txId, txErr = blockHandler.CreateTransaction(ctx, tx, blockId)
-		if txErr == nil {
-			break
-		}
-
-		if attempt < DefaultRetryAttempts-1 {
-			retryDelay := time.Duration(attempt+1) * time.Second
-			logger.Sugar.Warnf("Failed to create transaction %s (attempt %d/%d): %v, retrying in %v",
-				tx.Hash, attempt+1, DefaultRetryAttempts, txErr, retryDelay)
-			time.Sleep(retryDelay)
-		}
-	}
-	if txErr != nil {
-		logger.Sugar.Errorf("Failed to create transaction %s after %d attempts: %v", tx.Hash, DefaultRetryAttempts, txErr)
-		return
-	}
-
-	// Fetch transaction receipt
-	receipt, txErr := ethClient.GetTransactionReceipt(ctx, tx.Hash)
-	if txErr != nil {
-		logger.Sugar.Errorf("Failed to get receipt for transaction %s: %v", tx.Hash, txErr)
-		return
-	}
-
-	// Store access list entries
-	blockNumStr := strings.TrimPrefix(tx.BlockNumber, "0x")
-	blockNumBig, _ := new(big.Int).SetString(blockNumStr, 16)
-	blockNum := blockNumBig.Int64()
-	for _, accessListEntry := range tx.AccessList {
-		_, err := blockHandler.CreateAccessListEntry(ctx, &accessListEntry, txId, blockNum)
-		if err != nil {
-			logger.Sugar.Errorf("Failed to create access list entry for tx %s: %v", tx.Hash, err)
-			continue
-		}
-	}
-
-	// Store transaction logs from receipt
-	for _, log := range receipt.Logs {
-		_, err := blockHandler.CreateLog(ctx, &log, blockId, txId)
-		if err != nil {
-			logger.Sugar.Errorf("Failed to create log for tx %s: %v", tx.Hash, err)
-			continue
-		}
-	}
-
-	logger.Sugar.Infof("Processed transaction %s with %d access list entries and %d logs", tx.Hash, len(tx.AccessList), len(receipt.Logs))
-}
-
 func (i *ChainIndexer) StopIndexing() {
 	i.shouldIndex = false
 	i.isStarted = false
+
+	// Stop pruner
+	if i.pruner != nil {
+		i.pruner.Stop()
+		i.pruner = nil
+	}
 
 	// Stop health server
 	if i.healthServer != nil {
@@ -627,31 +573,57 @@ func (i *ChainIndexer) GetPeerInfo() (*server.P2PInfo, error) {
 
 	ctx := context.Background()
 
-	// Get peer information from DefraDB
-	peerInfoString, err := i.defraNode.DB.PeerInfo(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching peer info: %w", err)
-	}
-	peerInfo, errors := appsdk.BootstrapIntoPeers(peerInfoString)
-	if len(errors) > 0 {
-		return nil, fmt.Errorf("error turning bootstrap peer strings into peer info objects: %v", errors)
-	}
-
-	// Convert addresses to string slice
-	serverPeerInfo := make([]server.PeerInfo, len(peerInfo))
-	for idx, peer := range peerInfo {
-		publicKey := extractPublicKeyFromPeerID(peer.ID)
-		serverPeerInfo[idx] = server.PeerInfo{
-			ID:        peer.ID,
-			Addresses: peer.Addresses,
-			PublicKey: publicKey,
-		}
-	}
-
 	// Use NetworkHandler to determine if P2P is active
 	networkActive := i.networkHandler != nil && i.networkHandler.IsNetworkActive()
 
+	// Get this node's own peer info (listening addresses)
+	ownAddresses, err := i.defraNode.DB.PeerInfo(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching own peer info: %w", err)
+	}
+	ownPeers, _ := appsdk.BootstrapIntoPeers(ownAddresses)
+
+	var selfInfo *server.PeerInfo
+	if len(ownPeers) > 0 {
+		// Collect all addresses for our own peer ID
+		var addresses []string
+		for _, p := range ownPeers {
+			addresses = append(addresses, p.Addresses...)
+		}
+		selfInfo = &server.PeerInfo{
+			ID:        ownPeers[0].ID,
+			Addresses: addresses,
+			PublicKey: extractPublicKeyFromPeerID(ownPeers[0].ID),
+		}
+	}
+
+	// Get actually connected peers (may fail if P2P is not initialized)
+	activePeerStrings, err := i.defraNode.DB.ActivePeers(ctx)
+	if err != nil {
+		activePeerStrings = nil // P2P not available, treat as no peers
+	}
+	activePeers, _ := appsdk.BootstrapIntoPeers(activePeerStrings)
+
+	// Deduplicate peers by ID and merge addresses
+	peerMap := make(map[string]*server.PeerInfo)
+	for _, peer := range activePeers {
+		if existing, ok := peerMap[peer.ID]; ok {
+			existing.Addresses = append(existing.Addresses, peer.Addresses...)
+		} else {
+			peerMap[peer.ID] = &server.PeerInfo{
+				ID:        peer.ID,
+				Addresses: peer.Addresses,
+				PublicKey: extractPublicKeyFromPeerID(peer.ID),
+			}
+		}
+	}
+	serverPeerInfo := make([]server.PeerInfo, 0, len(peerMap))
+	for _, p := range peerMap {
+		serverPeerInfo = append(serverPeerInfo, *p)
+	}
+
 	return &server.P2PInfo{
+		Self:     selfInfo,
 		PeerInfo: serverPeerInfo,
 		Enabled:  networkActive,
 	}, nil
@@ -770,4 +742,27 @@ func (i *ChainIndexer) GetNodePublicKey() (string, error) {
 
 func (i *ChainIndexer) GetPeerPublicKey() (string, error) {
 	return signer.GetP2PPublicKey(i.defraNode, toAppConfig(i.cfg))
+}
+
+// GetPrunerMetrics returns the current pruner metrics, or nil if pruner is not enabled
+func (i *ChainIndexer) GetPrunerMetrics() *pruner.Metrics {
+	if i.pruner == nil {
+		return nil
+	}
+	metrics := i.pruner.GetMetrics()
+	return &metrics
+}
+
+// indexerQueueTracker adapts app-sdk's IndexerQueue to the local DocIDTrackerInterface.
+type indexerQueueTracker struct {
+	queue *pruner.IndexerQueue
+}
+
+func (t *indexerQueueTracker) TrackBlock(_ context.Context, blockNumber int64, result *defra.BlockCreationResult) error {
+	otherDocIDs := map[string][]string{
+		constants.CollectionTransaction:     result.TransactionIDs,
+		constants.CollectionLog:             result.LogIDs,
+		constants.CollectionAccessListEntry: result.AccessListIDs,
+	}
+	return t.queue.TrackBlockDocIDs(blockNumber, result.BlockID, otherDocIDs, result.BatchSignatureID)
 }
