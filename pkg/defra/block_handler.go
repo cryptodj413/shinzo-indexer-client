@@ -44,9 +44,10 @@ type DocIDTrackerInterface interface {
 }
 
 type BlockHandler struct {
-	defraNode     *node.Node            // Direct access to embedded DefraDB
-	maxDocsPerTxn int                   // Threshold for single-txn vs batched block creation
-	docIDTracker  DocIDTrackerInterface // Optional tracker for docIDs
+	defraNode     *node.Node                 // Direct access to embedded DefraDB
+	maxDocsPerTxn int                        // Threshold for single-txn vs batched block creation
+	docIDTracker  DocIDTrackerInterface      // Optional tracker for docIDs
+	collections   *constants.CollectionNames // Chain-specific collection names
 
 	// Document throughput metrics
 	metricsWindowStart  time.Time
@@ -68,7 +69,7 @@ type aleEntry struct {
 
 // NewBlockHandler creates a BlockHandler that uses direct DB calls.
 // maxDocsPerTxn is the threshold for single-txn vs batched block creation.
-func NewBlockHandler(defraNode *node.Node, maxDocsPerTxn int) (*BlockHandler, error) {
+func NewBlockHandler(defraNode *node.Node, maxDocsPerTxn int, collections *constants.CollectionNames) (*BlockHandler, error) {
 	if defraNode == nil {
 		return nil, errors.NewConfigurationError("defra", "NewBlockHandler",
 			"defraNode is nil", "", nil)
@@ -76,9 +77,13 @@ func NewBlockHandler(defraNode *node.Node, maxDocsPerTxn int) (*BlockHandler, er
 	if maxDocsPerTxn <= 0 {
 		maxDocsPerTxn = 1000
 	}
+	if collections == nil {
+		collections = constants.NewCollectionNames(constants.DefaultCollectionPrefix)
+	}
 	return &BlockHandler{
 		defraNode:     defraNode,
 		maxDocsPerTxn: maxDocsPerTxn,
+		collections:   collections,
 	}, nil
 }
 
@@ -145,27 +150,28 @@ func (h *BlockHandler) createBlockSingleTransaction(ctx context.Context, block *
 	collector := node.NewBlockCIDCollector()
 	ctx = node.ContextWithBlockSigning(ctx, collector)
 
-	colBlock, err := txn.GetCollectionByName(ctx, constants.CollectionBlock)
+	colBlock, err := txn.GetCollectionByName(ctx, h.collections.Block)
 	if err != nil {
 		txn.Discard()
 		return "", errors.NewQueryFailed("defra", "createBlockSingleTransaction", "failed to get block collection", err)
 	}
-	colTx, err := txn.GetCollectionByName(ctx, constants.CollectionTransaction)
+	colTx, err := txn.GetCollectionByName(ctx, h.collections.Transaction)
 	if err != nil {
 		txn.Discard()
 		return "", errors.NewQueryFailed("defra", "createBlockSingleTransaction", "failed to get tx collection", err)
 	}
-	colLog, err := txn.GetCollectionByName(ctx, constants.CollectionLog)
+	colLog, err := txn.GetCollectionByName(ctx, h.collections.Log)
 	if err != nil {
 		txn.Discard()
 		return "", errors.NewQueryFailed("defra", "createBlockSingleTransaction", "failed to get log collection", err)
 	}
-	colALE, err := txn.GetCollectionByName(ctx, constants.CollectionAccessListEntry)
+	colALE, err := txn.GetCollectionByName(ctx, h.collections.AccessListEntry)
 	if err != nil {
 		txn.Discard()
 		return "", errors.NewQueryFailed("defra", "createBlockSingleTransaction", "failed to get ALE collection", err)
 	}
-	colBlockSig, err := txn.GetCollectionByName(ctx, constants.CollectionBlockSignature)
+
+	colBlockSig, err := txn.GetCollectionByName(ctx, h.collections.BlockSignature)
 	if err != nil {
 		txn.Discard()
 		return "", errors.NewQueryFailed("defra", "createBlockSingleTransaction", "failed to get block signature collection", err)
@@ -464,22 +470,22 @@ func (h *BlockHandler) CreateBlockSignatureForExistingBlock(
 	}
 	tmpCtx := h.defraNode.DB.InitContext(ctx, tmpTxn)
 
-	colBlock, err := tmpTxn.GetCollectionByName(tmpCtx, constants.CollectionBlock)
+	colBlock, err := tmpTxn.GetCollectionByName(tmpCtx, h.collections.Block)
 	if err != nil {
 		tmpTxn.Discard()
 		return "", fmt.Errorf("failed to get block collection: %w", err)
 	}
-	colTx, err := tmpTxn.GetCollectionByName(tmpCtx, constants.CollectionTransaction)
+	colTx, err := tmpTxn.GetCollectionByName(tmpCtx, h.collections.Transaction)
 	if err != nil {
 		tmpTxn.Discard()
 		return "", fmt.Errorf("failed to get transaction collection: %w", err)
 	}
-	colLog, err := tmpTxn.GetCollectionByName(tmpCtx, constants.CollectionLog)
+	colLog, err := tmpTxn.GetCollectionByName(tmpCtx, h.collections.Log)
 	if err != nil {
 		tmpTxn.Discard()
 		return "", fmt.Errorf("failed to get log collection: %w", err)
 	}
-	colALE, err := tmpTxn.GetCollectionByName(tmpCtx, constants.CollectionAccessListEntry)
+	colALE, err := tmpTxn.GetCollectionByName(tmpCtx, h.collections.AccessListEntry)
 	if err != nil {
 		tmpTxn.Discard()
 		return "", fmt.Errorf("failed to get ALE collection: %w", err)
@@ -631,8 +637,8 @@ func (h *BlockHandler) CreateBlockSignatureForExistingBlock(
 		return "", fmt.Errorf("signing returned nil (no identity?)")
 	}
 
-	// Create the BlockSignature document and commit
-	colBlockSig, err := sigTxn.GetCollectionByName(sigCtx, constants.CollectionBlockSignature)
+	// Step 4: Create the BatchSignature document and commit
+	colBlockSig, err := sigTxn.GetCollectionByName(sigCtx, h.collections.BlockSignature)
 	if err != nil {
 		sigTxn.Discard()
 		return "", fmt.Errorf("failed to get block signature collection: %w", err)
@@ -683,7 +689,7 @@ func (h *BlockHandler) createBlockBatched(ctx context.Context, block *types.Bloc
 
 	ctx = h.defraNode.DB.InitContext(ctx, txn)
 
-	colBlock, err := txn.GetCollectionByName(ctx, constants.CollectionBlock)
+	colBlock, err := txn.GetCollectionByName(ctx, h.collections.Block)
 	if err != nil {
 		txn.Discard()
 		return "", errors.NewQueryFailed("defra", "createBlockBatched", "failed to get block collection", err)
@@ -733,7 +739,7 @@ func (h *BlockHandler) createBlockBatched(ctx context.Context, block *types.Bloc
 		}
 		ctx = h.defraNode.DB.InitContext(ctx, txn)
 
-		colTx, err := txn.GetCollectionByName(ctx, constants.CollectionTransaction)
+		colTx, err := txn.GetCollectionByName(ctx, h.collections.Transaction)
 		if err != nil {
 			txn.Discard()
 			batchErrors = append(batchErrors, fmt.Errorf("get tx collection: %w", err))
@@ -807,7 +813,7 @@ func (h *BlockHandler) createBlockBatched(ctx context.Context, block *types.Bloc
 		}
 		ctx = h.defraNode.DB.InitContext(ctx, txn)
 
-		colLog, err := txn.GetCollectionByName(ctx, constants.CollectionLog)
+		colLog, err := txn.GetCollectionByName(ctx, h.collections.Log)
 		if err != nil {
 			txn.Discard()
 			batchErrors = append(batchErrors, fmt.Errorf("get log collection: %w", err))
@@ -872,7 +878,7 @@ func (h *BlockHandler) createBlockBatched(ctx context.Context, block *types.Bloc
 		}
 		ctx = h.defraNode.DB.InitContext(ctx, txn)
 
-		colALE, err := txn.GetCollectionByName(ctx, constants.CollectionAccessListEntry)
+		colALE, err := txn.GetCollectionByName(ctx, h.collections.AccessListEntry)
 		if err != nil {
 			txn.Discard()
 			batchErrors = append(batchErrors, fmt.Errorf("get ALE collection: %w", err))
@@ -934,7 +940,7 @@ func (h *BlockHandler) createBlockBatched(ctx context.Context, block *types.Bloc
 					logger.Sugar.Warnf("Block %d: block signature verification FAILED", blockInt)
 				}
 
-				colBlockSig, err := sigTxn.GetCollectionByName(sigCtx, constants.CollectionBlockSignature)
+				colBlockSig, err := sigTxn.GetCollectionByName(sigCtx, h.collections.BlockSignature)
 				if err != nil {
 					sigTxn.Discard()
 					logger.Sugar.Warnf("Block %d: failed to get block signature collection: %v", blockInt, err)
@@ -986,7 +992,7 @@ func (h *BlockHandler) createBlockBatched(ctx context.Context, block *types.Bloc
 
 // GetHighestBlockNumber returns the highest block number stored in DefraDB
 func (h *BlockHandler) GetHighestBlockNumber(ctx context.Context) (int64, error) {
-	query := `query {` + constants.CollectionBlock + ` (order: {number: DESC}, limit: 1) { number }}`
+	query := `query {` + h.collections.Block + ` (order: {number: DESC}, limit: 1) { number }}`
 
 	result := h.defraNode.DB.ExecRequest(ctx, query)
 	if len(result.GQL.Errors) > 0 {
@@ -995,17 +1001,17 @@ func (h *BlockHandler) GetHighestBlockNumber(ctx context.Context) (int64, error)
 
 	data, ok := result.GQL.Data.(map[string]any)
 	if !ok {
-		return 0, errors.NewDocumentNotFound("defra", "GetHighestBlockNumber", constants.CollectionBlock, "no data")
+		return 0, errors.NewDocumentNotFound("defra", "GetHighestBlockNumber", h.collections.Block, "no data")
 	}
 
-	blockArray, ok := data[constants.CollectionBlock].([]any)
+	blockArray, ok := data[h.collections.Block].([]any)
 	if !ok || len(blockArray) == 0 {
-		return 0, errors.NewDocumentNotFound("defra", "GetHighestBlockNumber", constants.CollectionBlock, "no blocks")
+		return 0, errors.NewDocumentNotFound("defra", "GetHighestBlockNumber", h.collections.Block, "no blocks")
 	}
 
 	block, ok := blockArray[0].(map[string]any)
 	if !ok {
-		return 0, errors.NewDocumentNotFound("defra", "GetHighestBlockNumber", constants.CollectionBlock, "invalid format")
+		return 0, errors.NewDocumentNotFound("defra", "GetHighestBlockNumber", h.collections.Block, "invalid format")
 	}
 
 	switch v := block["number"].(type) {
@@ -1017,5 +1023,5 @@ func (h *BlockHandler) GetHighestBlockNumber(ctx context.Context) (int64, error)
 		return int64(v), nil
 	}
 
-	return 0, errors.NewDocumentNotFound("defra", "GetHighestBlockNumber", constants.CollectionBlock, "invalid number type")
+	return 0, errors.NewDocumentNotFound("defra", "GetHighestBlockNumber", h.collections.Block, "invalid number type")
 }

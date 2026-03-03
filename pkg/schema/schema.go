@@ -2,6 +2,7 @@ package schema
 
 import (
 	_ "embed"
+	"strings"
 )
 
 //go:embed schema_standard.graphql
@@ -26,4 +27,14 @@ func GetSchemaForBuild() string {
 		return GetBranchableSchema()
 	}
 	return GetSchema()
+}
+
+// GetSchemaForChain returns the schema with collection names adapted for the given chain prefix.
+// It replaces the default "Ethereum__Mainnet" prefix with the provided one.
+func GetSchemaForChain(prefix string) string {
+	s := GetSchemaForBuild()
+	if prefix == "" || prefix == "Ethereum__Mainnet" {
+		return s
+	}
+	return strings.ReplaceAll(s, "Ethereum__Mainnet", prefix)
 }
