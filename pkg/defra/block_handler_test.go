@@ -34,7 +34,7 @@ func TestMain(m *testing.M) {
 
 func TestNewBlockHandler_NilNode(t *testing.T) {
 	// Test that nil node returns error
-	handler, err := NewBlockHandler(nil, 1000)
+	handler, err := NewBlockHandler(nil, 1000, nil)
 	if err == nil {
 		t.Error("Expected error for nil node, got nil")
 	}
