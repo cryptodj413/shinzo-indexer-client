@@ -215,6 +215,25 @@ go build -tags=branchable -o bin/block_poster cmd/block_poster/main.go
 - `make stop` - Stop all services
 - `make help` - Show all available targets with descriptions
 
+## Test Coverage
+
+| Package | Coverage |
+| --- | --- |
+| `cmd/block_poster` | 98.0% |
+| `config` | 100.0% |
+| `pkg/defra` | 98.6% |
+| `pkg/errors` | 100.0% |
+| `pkg/indexer` | 95.3% |
+| `pkg/logger` | 100.0% |
+| `pkg/rpc` | 98.3% |
+| `pkg/schema` | 100.0% |
+| `pkg/server` | 99.0% |
+| `pkg/snapshot` | 86.6% |
+| `pkg/utils` | 100.0% |
+| **Total** | **95.6%** |
+
+Run `make coverage` to generate an HTML coverage report.
+
 ## Testing
 
 ### Unit Tests
