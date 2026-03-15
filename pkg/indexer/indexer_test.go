@@ -20,9 +20,11 @@ import (
 	appConfig "github.com/shinzonetwork/shinzo-app-sdk/pkg/config"
 	"github.com/shinzonetwork/shinzo-app-sdk/pkg/pruner"
 	"github.com/shinzonetwork/shinzo-indexer-client/config"
+	"github.com/shinzonetwork/shinzo-indexer-client/pkg/chain"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/constants"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/defra"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/logger"
+	"github.com/shinzonetwork/shinzo-indexer-client/pkg/normalizer"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/rpc"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/server"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/snapshot"
@@ -46,7 +48,13 @@ func TestIndexing(t *testing.T) {
 
 // TestCreateIndexer tests the indexer creation
 func TestCreateIndexer(t *testing.T) {
+	logger.InitConsoleOnly(true)
+	
 	cfg := &config.Config{
+		Chain: config.ChainConfig{
+			Name:    "Ethereum",
+			Network: "Mainnet",
+		},
 		DefraDB: config.DefraDBConfig{
 			Url: "http://localhost:9181",
 		},
@@ -68,6 +76,8 @@ func TestCreateIndexer(t *testing.T) {
 
 // TestCreateIndexerWithNilConfig tests indexer creation with nil config
 func TestCreateIndexerWithNilConfig(t *testing.T) {
+	logger.InitConsoleOnly(true)
+	
 	indexer, err := CreateIndexer(nil)
 
 	assert.Error(t, err)
@@ -78,7 +88,13 @@ func TestCreateIndexerWithNilConfig(t *testing.T) {
 
 // TestIndexerStateManagement tests the state management methods
 func TestIndexerStateManagement(t *testing.T) {
+	logger.InitConsoleOnly(true)
+	
 	cfg := &config.Config{
+		Chain: config.ChainConfig{
+			Name:    "Ethereum",
+			Network: "Mainnet",
+		},
 		DefraDB: config.DefraDBConfig{Url: "http://localhost:9181"},
 	}
 	indexer, err := CreateIndexer(cfg)
@@ -99,7 +115,13 @@ func TestIndexerStateManagement(t *testing.T) {
 
 // TestGetDefraDBPortWithEmbeddedNode tests port retrieval with embedded node
 func TestGetDefraDBPortWithEmbeddedNode(t *testing.T) {
+	logger.InitConsoleOnly(true)
+	
 	cfg := &config.Config{
+		Chain: config.ChainConfig{
+			Name:    "Ethereum",
+			Network: "Mainnet",
+		},
 		DefraDB: config.DefraDBConfig{Url: "http://localhost:9181"},
 	}
 	indexer, err := CreateIndexer(cfg)
@@ -114,7 +136,13 @@ func TestGetDefraDBPortWithEmbeddedNode(t *testing.T) {
 
 // TestStopIndexing tests the stop indexing functionality
 func TestStopIndexing(t *testing.T) {
+	logger.InitConsoleOnly(true)
+	
 	cfg := &config.Config{
+		Chain: config.ChainConfig{
+			Name:    "Ethereum",
+			Network: "Mainnet",
+		},
 		DefraDB: config.DefraDBConfig{Url: "http://localhost:9181"},
 	}
 	indexer, err := CreateIndexer(cfg)
@@ -197,22 +225,6 @@ func TestConvertGethBlockToDefraBlock(t *testing.T) {
 		},
 	}
 
-	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
-			Url: "http://localhost:9181",
-		},
-	}
-	indexer, err := CreateIndexer(cfg)
-	assert.NoError(t, err)
-
-	// Set some state
-	indexer.shouldIndex = true
-	indexer.isStarted = true
-	indexer.hasIndexedAtLeastOneBlock = true
-
-	// Stop indexing
-	indexer.StopIndexing()
-
 	// Test block structure
 	transactions := gethBlock.Transactions
 	defraBlock := &types.Block{
@@ -290,6 +302,8 @@ func TestConvertGethBlockToDefraBlockWithEmptyTransactions(t *testing.T) {
 
 // TestCreateIndexerWithNilConfigError tests that CreateIndexer fails immediately with nil config
 func TestCreateIndexerWithNilConfigError(t *testing.T) {
+	logger.InitConsoleOnly(true)
+	
 	// This should fail immediately when creating the indexer
 	indexer, err := CreateIndexer(nil)
 
@@ -301,8 +315,14 @@ func TestCreateIndexerWithNilConfigError(t *testing.T) {
 
 // TestIndexerConfigHandling tests configuration handling
 func TestIndexerConfigHandling(t *testing.T) {
+	logger.InitConsoleOnly(true)
+	
 	// Test with custom config
 	customCfg := &config.Config{
+		Chain: config.ChainConfig{
+			Name:    "Ethereum",
+			Network: "Mainnet",
+		},
 		DefraDB: config.DefraDBConfig{
 			Url: "http://localhost:8888",
 			Store: config.DefraDBStoreConfig{
@@ -415,7 +435,13 @@ func TestBlockProcessingLogic(t *testing.T) {
 
 // TestIndexerLifecycle tests the complete indexer lifecycle
 func TestIndexerLifecycle(t *testing.T) {
+	logger.InitConsoleOnly(true)
+	
 	cfg := &config.Config{
+		Chain: config.ChainConfig{
+			Name:    "Ethereum",
+			Network: "Mainnet",
+		},
 		DefraDB: config.DefraDBConfig{
 			Url: "http://localhost:9181",
 			Store: config.DefraDBStoreConfig{
@@ -455,7 +481,11 @@ func TestToAppConfig_NilInput(t *testing.T) {
 
 func TestToAppConfig_ValidConfig(t *testing.T) {
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			Url:           "http://localhost:9181",
 			KeyringSecret: "test-secret-key",
 			P2P: config.DefraDBP2PConfig{
@@ -523,7 +553,11 @@ func TestToAppConfig_EmptyConfig(t *testing.T) {
 
 func TestToAppConfig_ReturnsNewInstance(t *testing.T) {
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			Url: "http://localhost:9181",
 		},
 	}
@@ -875,6 +909,11 @@ func TestGetPeerInfo_NilNode(t *testing.T) {
 func TestGetNodePublicKey_NilNode(t *testing.T) {
 	indexer := &ChainIndexer{
 		defraNode: nil,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		cfg:       &config.Config{},
 	}
 	_, err := indexer.GetNodePublicKey()
@@ -884,6 +923,11 @@ func TestGetNodePublicKey_NilNode(t *testing.T) {
 func TestGetPeerPublicKey_NilNode(t *testing.T) {
 	indexer := &ChainIndexer{
 		defraNode: nil,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		cfg:       &config.Config{},
 	}
 	_, err := indexer.GetPeerPublicKey()
@@ -899,6 +943,11 @@ func TestStopIndexing_WithEmbeddedNode(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode:   td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		shouldIndex: true,
 		isStarted:   true,
 		cfg:         &config.Config{},
@@ -930,6 +979,11 @@ func TestGetDefraDBPort_WithEmbeddedNode(t *testing.T) {
 func TestSignMessages_NilNode(t *testing.T) {
 	indexer := &ChainIndexer{
 		defraNode: nil,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		cfg:       &config.Config{},
 	}
 	_, _, err := indexer.SignMessages("test message")
@@ -1118,6 +1172,11 @@ func TestProcessBlock_Success_NoTransactions(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	ctx := context.Background()
@@ -1159,6 +1218,11 @@ func TestProcessBlock_RPCError_RetriesAndFails(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	ctx := context.Background()
@@ -1205,6 +1269,11 @@ func TestProcessBlockBatch_WithTransactions(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	block := &types.Block{
@@ -1282,6 +1351,11 @@ func TestProcessBlockBatch_WithBlockReceipts(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	block := &types.Block{
@@ -1734,7 +1808,11 @@ func TestStartIndexing_ExternalDefraDB_WaitFails(t *testing.T) {
 
 	// Point to a non-listening address so WaitForDefraDB fails
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			Url: "http://127.0.0.1:1",
 		},
 		Logger: config.LoggerConfig{Development: true},
@@ -1767,7 +1845,11 @@ func TestStartIndexing_ExternalDefraDB_SchemaApplyFails(t *testing.T) {
 	defer defraServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			Url: defraServer.URL,
 		},
 		Logger: config.LoggerConfig{Development: true},
@@ -1800,7 +1882,11 @@ func TestStartIndexing_ExternalDefraDB_SchemaAlreadyExists(t *testing.T) {
 	defer defraServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			Url: defraServer.URL,
 		},
 		Logger: config.LoggerConfig{Development: true},
@@ -1869,6 +1955,10 @@ func TestStartIndexing_Embedded_FullIntegration(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
+		Chain: config.ChainConfig{
+			Name:    "Ethereum",
+			Network: "Mainnet",
+		},
 		DefraDB: config.DefraDBConfig{
 			Url:           "",
 			KeyringSecret: "test-secret-for-keyring-12345678",
@@ -1952,6 +2042,10 @@ func TestStartIndexing_Embedded_WithConfiguredStartHeight(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
+		Chain: config.ChainConfig{
+			Name:    "Ethereum",
+			Network: "Mainnet",
+		},
 		DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
@@ -2009,6 +2103,10 @@ func TestStartIndexing_Embedded_WithHealthServer(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
+		Chain: config.ChainConfig{
+			Name:    "Ethereum",
+			Network: "Mainnet",
+		},
 		DefraDB: config.DefraDBConfig{
 			Url:           "http://localhost:9999", // Set Url so healthDefraURL uses config URL branch
 			KeyringSecret: "test-secret-for-keyring-12345678",
@@ -2099,6 +2197,11 @@ func TestRunConcurrentIndexing_DirectCall(t *testing.T) {
 			},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2143,6 +2246,11 @@ func TestGetPeerInfo_WithEmbeddedNodeAndNetworkHandler(t *testing.T) {
 	// networkHandler is nil but defraNode is set - covers the line networkActive = false
 	indexer := &ChainIndexer{
 		defraNode:      td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		networkHandler: nil, // nil network handler
 	}
 
@@ -2198,6 +2306,11 @@ func TestFetchAndProcessBlock_ReceiptFallbackViaProcessBlockBatch(t *testing.T) 
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	// Create block with a transaction — processBlockBatch will fetch receipts individually
@@ -2471,6 +2584,11 @@ func TestProcessBlockBatch_AlreadyExists(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	block := &types.Block{
@@ -2510,6 +2628,11 @@ func TestSignMessages_WithEmbeddedNode(t *testing.T) {
 	td := testutils.SetupTestDefraDB(t)
 	indexer := &ChainIndexer{
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		cfg: &config.Config{
 			DefraDB: config.DefraDBConfig{
 				Store: config.DefraDBStoreConfig{Path: td.Dir},
@@ -2532,6 +2655,11 @@ func TestSignMessages_WithEmbeddedNode_KeyringSetup(t *testing.T) {
 	td := testutils.SetupTestDefraDB(t)
 	indexer := &ChainIndexer{
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		cfg: &config.Config{
 			DefraDB: config.DefraDBConfig{
 				KeyringSecret: "test-secret-key-12345678",
@@ -2601,6 +2729,11 @@ func TestStopIndexing_WithAllComponents(t *testing.T) {
 		shouldIndex:    true,
 		isStarted:      true,
 		defraNode:      td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		pruner:         p,
 		snapshotter:    s,
 		healthServer:   hs,
@@ -2821,6 +2954,11 @@ func TestProcessBlock_AlreadyExistsBlock(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	ctx := context.Background()
@@ -2867,6 +3005,11 @@ func TestProcessBlockBatch_ReceiptError(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	block := &types.Block{
@@ -3110,6 +3253,10 @@ func TestStartIndexing_Embedded_SequentialLoop(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
+		Chain: config.ChainConfig{
+			Name:    "Ethereum",
+			Network: "Mainnet",
+		},
 		DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
@@ -3199,7 +3346,11 @@ func TestStartIndexing_Embedded_SequentialLoop_AlreadyExists(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -3281,7 +3432,11 @@ func TestStartIndexing_Embedded_SequentialLoop_NotFound(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -3363,7 +3518,11 @@ func TestStartIndexing_Embedded_SequentialLoop_OtherError(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -3417,6 +3576,11 @@ func TestGetPeerInfo_DeduplicationBranch(t *testing.T) {
 	// Create indexer with embedded node — exercise all code paths in GetPeerInfo
 	indexer := &ChainIndexer{
 		defraNode:      td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		networkHandler: nil,
 	}
 
@@ -3456,6 +3620,11 @@ func TestProcessBlockBatch_RetryExhaustion(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	// Use a nil block to trigger an error in CreateBlockBatch
@@ -3562,6 +3731,11 @@ func TestSignMessages_FullFlow(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		cfg: &config.Config{
 			DefraDB: config.DefraDBConfig{
 				KeyringSecret: appCfg.DefraDB.KeyringSecret,
@@ -3686,6 +3860,11 @@ func TestSignMessages_WithIdentity(t *testing.T) {
 	// Create the identity manually by using the keyring
 	indexer := &ChainIndexer{
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		cfg: &config.Config{
 			DefraDB: config.DefraDBConfig{
 				KeyringSecret: keyringSecret,
@@ -3736,6 +3915,11 @@ func TestProcessBlockBatch_RetryWithDelay(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	// Use a block with invalid/empty fields that will cause CreateBlockBatch to fail
@@ -3773,7 +3957,11 @@ func TestStartIndexing_ExternalDefra(t *testing.T) {
 
 	// Create a config pointing to the test DefraDB as "external"
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			Url: fmt.Sprintf("http://localhost:%d", td.Port),
 		},
 		Geth: config.GethConfig{NodeURL: "http://localhost:9999"},
@@ -3829,7 +4017,11 @@ func TestStartIndexing_WithHealthPrunerSnapshotter(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -3925,7 +4117,11 @@ func TestStartIndexing_ConcurrentWithSubsystems(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -4019,7 +4215,11 @@ func TestStartIndexing_ResumeFromHighBlock(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -4102,7 +4302,11 @@ func TestStartIndexing_Embedded_SequentialLoop_UnsupportedTxType(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -4187,6 +4391,11 @@ func TestProcessBlockBatch_WithTransactionsAndReceipts(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	block := &types.Block{
@@ -4262,6 +4471,11 @@ func TestProcessBlockBatch_ReceiptFetchFailure(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	block := &types.Block{
@@ -4576,6 +4790,11 @@ func TestGetPeerInfo_SelfInfoConstruction(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode:      td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		networkHandler: nil,
 	}
 
@@ -4618,7 +4837,11 @@ func TestSignMessages_FullSuccessPath(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -4747,6 +4970,11 @@ func TestStopIndexing_WithPrunerAndSnapshotter(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode:   td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		isStarted:   true,
 		shouldIndex: true,
 		pruner:      p,
@@ -4909,7 +5137,11 @@ func TestStartIndexing_ResumeFromPrunerQueue(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -4997,7 +5229,11 @@ func TestStartIndexing_NegativeStartHeightClamp(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -5078,7 +5314,11 @@ func TestStartIndexing_WithOpenBrowser(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -5201,6 +5441,11 @@ func TestProcessBlockBatch_ReceiptFetchError(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	block := &types.Block{
@@ -5262,6 +5507,11 @@ func TestProcessBlockBatch_AlreadyExists_WithSigning(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	block := &types.Block{
@@ -5294,6 +5544,11 @@ func TestGetPeerInfo_WithEmbeddedNode_NoP2P(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	info, err := indexer.GetPeerInfo()
@@ -5361,6 +5616,11 @@ func TestProcessBlockBatch_ReceiptSuccessPath(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 2},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	block := &types.Block{
@@ -5466,6 +5726,11 @@ func TestProcessBlockBatch_MultipleTransactionsReceiptSuccess(t *testing.T) {
 			Indexer: config.IndexerConfig{ReceiptWorkers: 4},
 		},
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	block := &types.Block{
@@ -5552,7 +5817,11 @@ func TestGetPeerInfo_FullIntegration_WithP2P(t *testing.T) {
 	}
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: appCfg.DefraDB.KeyringSecret,
 			P2P: config.DefraDBP2PConfig{
 				Enabled:    true,
@@ -5568,6 +5837,11 @@ func TestGetPeerInfo_FullIntegration_WithP2P(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		cfg:       cfg,
 	}
 
@@ -5608,7 +5882,11 @@ func TestSignMessages_SignWithDefraKeysSucceeds_P2PKeysFails(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-sign-p2p-err-1",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -5708,7 +5986,11 @@ func TestStartIndexing_Embedded_SequentialLoop_ContextCancel(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -5884,6 +6166,11 @@ func TestGetPeerInfo_AfterNodeClose(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode: closedNode,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	// PeerInfo should return an error since node is closed
@@ -5975,7 +6262,11 @@ func TestStartIndexing_Embedded_NoExistingBlocks(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -6062,7 +6353,11 @@ func TestStartIndexing_Embedded_HealthServerWithoutUrl(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			Url:           "", // Empty URL → health server uses defraNode port
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
@@ -6156,7 +6451,11 @@ func TestStartIndexing_PruneQueueLoadError(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -6323,6 +6622,11 @@ func TestGetNodePublicKey_WithEmbeddedNode(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		cfg: &config.Config{
 			DefraDB: config.DefraDBConfig{
 				KeyringSecret: "test-secret-for-pubkey-test-1234",
@@ -6347,6 +6651,11 @@ func TestGetPeerPublicKey_WithEmbeddedNode(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode: td.Node,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		cfg: &config.Config{
 			DefraDB: config.DefraDBConfig{
 				KeyringSecret: "test-secret-for-pubkey-test-1234",
@@ -6468,6 +6777,11 @@ func TestGetPeerInfo_WithP2PEnabled(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode: defraNode,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	info, err := indexer.GetPeerInfo()
@@ -6497,6 +6811,11 @@ func TestGetPeerInfo_P2PEnabled_NoNetworkHandler(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode:      defraNode,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 		networkHandler: nil,
 	}
 
@@ -6645,6 +6964,11 @@ func TestGetPeerInfo_WithConnectedPeers(t *testing.T) {
 	// Now get peer info from node1 — should include node2 as an active peer
 	indexer := &ChainIndexer{
 		defraNode: node1,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	info, err := indexer.GetPeerInfo()
@@ -6729,6 +7053,11 @@ func TestGetPeerInfo_PeerDedupMerge(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode: node1,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	info, err := indexer.GetPeerInfo()
@@ -6772,6 +7101,11 @@ func TestGetPeerInfo_P2PEnabledNodeClosed(t *testing.T) {
 
 	indexer := &ChainIndexer{
 		defraNode: defraNode,
+		chainID:           chain.EthereumMainnet,
+		chainAdapter:      chain.GetAdapter(chain.EthereumMainnet),
+		blockNormalizer:   normalizer.NewBlockNormalizer(chain.EthereumMainnet),
+		txNormalizer:      normalizer.NewTransactionNormalizer(chain.EthereumMainnet),
+		collections:       constants.NewCollectionNames(constants.DefaultCollectionPrefix),
 	}
 
 	// PeerInfo should either error (covering line 596-598) or return empty info
@@ -6924,7 +7258,11 @@ func TestStartIndexing_ResumeFromExistingBlocks(t *testing.T) {
 
 	// Phase 1: Start an indexer to populate some blocks
 	cfg1 := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -6975,7 +7313,11 @@ func TestStartIndexing_ResumeFromExistingBlocks(t *testing.T) {
 	blockCallCount.Store(0)
 
 	cfg2 := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -7055,7 +7397,11 @@ func TestStartIndexing_GetLatestBlockNumberError(t *testing.T) {
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -7205,7 +7551,11 @@ func TestStartIndexing_SnapshotterStartError(t *testing.T) {
 	require.NoError(t, err)
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-keyring-12345678",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -7305,7 +7655,11 @@ func TestStartIndexing_Embedded_SequentialLoop_UnsupportedTxType_FromRPC(t *test
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-seq-unsupported",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -7398,7 +7752,11 @@ func TestStartIndexing_Embedded_SequentialLoop_AlreadyExists_FromRPC(t *testing.
 	defer rpcServer.Close()
 
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-seq-alrexists",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},
@@ -7462,7 +7820,11 @@ func TestSignMessages_P2PKeysFails_Deterministic(t *testing.T) {
 
 	// Use P2P disabled — signer.SignWithP2PKeys should fail
 	cfg := &config.Config{
-		DefraDB: config.DefraDBConfig{
+		Chain: config.ChainConfig{
+		Name:    "Ethereum",
+		Network: "Mainnet",
+	},
+	DefraDB: config.DefraDBConfig{
 			KeyringSecret: "test-secret-for-sign-determ",
 			P2P:           config.DefraDBP2PConfig{Enabled: false},
 			Store:         config.DefraDBStoreConfig{Path: tmpDir},

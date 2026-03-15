@@ -3,6 +3,8 @@ package schema
 import (
 	_ "embed"
 	"strings"
+	
+	"github.com/shinzonetwork/shinzo-indexer-client/pkg/chain"
 )
 
 //go:embed schema_standard.graphql
@@ -34,11 +36,24 @@ func schemaForBuild(branchable bool) string {
 }
 
 // GetSchemaForChain returns the schema with collection names adapted for the given chain prefix.
-// It replaces the default "Ethereum__Mainnet" prefix with the provided one.
+// It uses the schema manager to generate chain-specific schemas (L1 vs L2).
+// TODO: This function currently uses a simple prefix replacement approach for backward compatibility.
+// Future enhancement: Use Manager.GetSchemaForChain() to generate proper L1/L2 schemas based on ChainID.
 func GetSchemaForChain(prefix string) string {
 	s := GetSchemaForBuild()
-	if prefix == "" || prefix == "Ethereum__Mainnet" {
+	if prefix == "" || prefix == "Ethereum__Mainnet__" {
 		return s
 	}
-	return strings.ReplaceAll(s, "Ethereum__Mainnet", prefix)
+	// Remove trailing __ from prefix if present for replacement
+	cleanPrefix := strings.TrimSuffix(prefix, "__")
+	return strings.ReplaceAll(s, "Ethereum__Mainnet", cleanPrefix)
+}
+
+// GetSchemaForChainID returns the schema for a specific chain using the Manager.
+// This generates proper L1/L2-specific schemas based on the chain type.
+// TODO: Replace GetSchemaForChain() with this function once all callers are updated.
+func GetSchemaForChainID(chainID chain.ChainID) (string, error) {
+	registry := chain.NewRegistry()
+	manager := NewManager(registry)
+	return manager.GetSchemaForChain(chainID)
 }

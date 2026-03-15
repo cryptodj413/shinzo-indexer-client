@@ -26,23 +26,28 @@ type Block struct {
 	Number           string        `json:"number"`
 	Timestamp        string        `json:"timestamp"`
 	ParentHash       string        `json:"parentHash"`
-	Difficulty       string        `json:"difficulty"`
-	TotalDifficulty  string        `json:"totalDifficulty"`
+	Difficulty       string        `json:"difficulty,omitempty"`
+	TotalDifficulty  string        `json:"totalDifficulty,omitempty"`
 	GasUsed          string        `json:"gasUsed"`
 	GasLimit         string        `json:"gasLimit"`
 	BaseFeePerGas    string        `json:"baseFeePerGas,omitempty"`
-	Nonce            string        `json:"nonce"`
+	Nonce            string        `json:"nonce,omitempty"`
 	Miner            string        `json:"miner"`
 	Size             string        `json:"size"`
 	StateRoot        string        `json:"stateRoot"`
-	Sha3Uncles       string        `json:"sha3Uncles"`
+	Sha3Uncles       string        `json:"sha3Uncles,omitempty"`
 	TransactionsRoot string        `json:"transactionsRoot"`
 	ReceiptsRoot     string        `json:"receiptsRoot"`
 	LogsBloom        string        `json:"logsBloom"`
 	ExtraData        string        `json:"extraData"`
-	MixHash          string        `json:"mixHash"`
-	Uncles           []string      `json:"uncles"`
+	MixHash          string        `json:"mixHash,omitempty"`
+	Uncles           []string      `json:"uncles,omitempty"`
 	Transactions     []Transaction `json:"transactions,omitempty"`
+	
+	// L2-specific fields
+	L1BlockNumber string `json:"l1BlockNumber,omitempty"` // Arbitrum, Optimism
+	SendCount     string `json:"sendCount,omitempty"`     // Arbitrum
+	SendRoot      string `json:"sendRoot,omitempty"`      // Arbitrum
 }
 
 type Transaction struct {
@@ -70,6 +75,19 @@ type Transaction struct {
 	CumulativeGasUsed    string            `json:"cumulativeGasUsed,omitempty"`
 	EffectiveGasPrice    string            `json:"effectiveGasPrice,omitempty"`
 	Logs                 []Log             `json:"logs,omitempty"`
+	
+	// L2-specific fields
+	L1BlockNumber string `json:"l1BlockNumber,omitempty"` // Optimism deposits
+	L1Timestamp   string `json:"l1Timestamp,omitempty"`   // Optimism deposits
+	L1DataFee     string `json:"l1DataFee,omitempty"`     // Arbitrum, Optimism
+	QueueOrigin   string `json:"queueOrigin,omitempty"`   // Optimism: "sequencer" or "l1"
+	
+	// Arbitrum retryable ticket fields
+	RetryTo          string `json:"retryTo,omitempty"`
+	RetryValue       string `json:"retryValue,omitempty"`
+	RetryData        string `json:"retryData,omitempty"`
+	Beneficiary      string `json:"beneficiary,omitempty"`
+	MaxSubmissionFee string `json:"maxSubmissionFee,omitempty"`
 }
 
 type Log struct {

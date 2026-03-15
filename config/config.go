@@ -167,6 +167,61 @@ func validateConfig(cfg *Config) error {
 	if !cfg.DefraDB.Embedded && strings.TrimSpace(cfg.DefraDB.Url) == "" {
 		return fmt.Errorf("external DefraDB requires a non-empty url")
 	}
+	
+	// Validate chain configuration using registry
+	if err := validateChainConfig(&cfg.Chain); err != nil {
+		return fmt.Errorf("chain configuration error: %w", err)
+	}
+	
+	return nil
+}
+
+// validateChainConfig validates the chain configuration against the registry
+func validateChainConfig(cfg *ChainConfig) error {
+	// Import chain package dynamically to avoid circular dependency
+	// This will be resolved when we properly integrate the chain package
+	// For now, we'll do basic validation
+	if strings.TrimSpace(cfg.Name) == "" {
+		return fmt.Errorf("chain name cannot be empty")
+	}
+	if strings.TrimSpace(cfg.Network) == "" {
+		return fmt.Errorf("chain network cannot be empty")
+	}
+	
+	// Validate against supported chains
+	supportedChains := map[string][]string{
+		"ethereum":  {"mainnet", "sepolia"},
+		"arbitrum":  {"mainnet", "sepolia"},
+		"optimism":  {"mainnet", "sepolia"},
+		"avalanche": {"mainnet", "fuji"},
+		"polygon":   {"mainnet", "amoy"},
+	}
+	
+	nameLower := strings.ToLower(cfg.Name)
+	networkLower := strings.ToLower(cfg.Network)
+	
+	networks, supported := supportedChains[nameLower]
+	if !supported {
+		var supportedNames []string
+		for name := range supportedChains {
+			supportedNames = append(supportedNames, name)
+		}
+		return fmt.Errorf("unsupported chain: %s. Supported chains: %s", 
+			cfg.Name, strings.Join(supportedNames, ", "))
+	}
+	
+	validNetwork := false
+	for _, net := range networks {
+		if net == networkLower {
+			validNetwork = true
+			break
+		}
+	}
+	if !validNetwork {
+		return fmt.Errorf("unsupported network %s for chain %s. Valid networks: %s",
+			cfg.Network, cfg.Name, strings.Join(networks, ", "))
+	}
+	
 	return nil
 }
 

@@ -16,10 +16,12 @@ import (
 
 	"github.com/shinzonetwork/shinzo-app-sdk/pkg/pruner"
 	"github.com/shinzonetwork/shinzo-indexer-client/config"
+	"github.com/shinzonetwork/shinzo-indexer-client/pkg/chain"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/constants"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/defra"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/errors"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/logger"
+	"github.com/shinzonetwork/shinzo-indexer-client/pkg/normalizer"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/rpc"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/schema"
 	"github.com/shinzonetwork/shinzo-indexer-client/pkg/server"
@@ -53,6 +55,10 @@ const defaultListenAddress string = "/ip4/127.0.0.1/tcp/9171"
 type ChainIndexer struct {
 	cfg                       *config.Config
 	collections               *constants.CollectionNames
+	chainID                   chain.ChainID
+	chainAdapter              chain.Adapter
+	blockNormalizer           *normalizer.BlockNormalizer
+	txNormalizer              *normalizer.TransactionNormalizer
 	shouldIndex               bool
 	isStarted                 bool
 	hasIndexedAtLeastOneBlock bool
@@ -93,9 +99,35 @@ func CreateIndexer(cfg *config.Config) (*ChainIndexer, error) {
 			errors.WithMetadata("host", "nil"),
 			errors.WithMetadata("port", "nil"))
 	}
+	
+	// Validate and get chain ID
+	registry := chain.NewRegistry()
+	chainID, err := registry.ValidateAndGetChainID(cfg.Chain.Name, cfg.Chain.Network)
+	if err != nil {
+		return nil, errors.NewConfigurationError(
+			"indexer",
+			"CreateIndexer",
+			fmt.Sprintf("invalid chain configuration: %v", err),
+			fmt.Sprintf("chain=%s, network=%s", cfg.Chain.Name, cfg.Chain.Network),
+			err,
+			errors.WithMetadata("chain", cfg.Chain.Name),
+			errors.WithMetadata("network", cfg.Chain.Network))
+	}
+	
+	// Create chain adapter and normalizers
+	chainAdapter := chain.GetAdapter(chainID)
+	blockNormalizer := normalizer.NewBlockNormalizer(chainID)
+	txNormalizer := normalizer.NewTransactionNormalizer(chainID)
+	
+	logger.Sugar.Infof("Initialized indexer for chain: %s (ID: %d)", chainID.String(), chainID)
+	
 	return &ChainIndexer{
 		cfg:                       cfg,
 		collections:               constants.NewCollectionNames(chainPrefixFromConfig(cfg)),
+		chainID:                   chainID,
+		chainAdapter:              chainAdapter,
+		blockNormalizer:           blockNormalizer,
+		txNormalizer:              txNormalizer,
 		shouldIndex:               false,
 		isStarted:                 false,
 		hasIndexedAtLeastOneBlock: false,
@@ -233,11 +265,22 @@ func (i *ChainIndexer) StartIndexing(defraStarted bool) error {
 	}
 	logger.Sugar.Infof("Using direct DB access for embedded DefraDB (maxDocsPerTxn=%d)", cfg.Indexer.MaxDocsPerTxn)
 
-	// Connect to Ethereum client early — needed for latest block query and indexing
-	client, err := rpc.NewEthereumClient(cfg.Geth.NodeURL, cfg.Geth.WsURL, cfg.Geth.APIKey)
+	// Create RPC client factory and get client for this chain
+	// TODO: Support multiple chains by loading all RPC configs from config file
+	// For now, we create a factory with just the current chain's config
+	clientConfigs := map[chain.ChainID]rpc.ClientConfig{
+		i.chainID: {
+			NodeURL: cfg.Geth.NodeURL,
+			WsURL:   cfg.Geth.WsURL,
+			APIKey:  cfg.Geth.APIKey,
+		},
+	}
+	factory := rpc.NewClientFactory(clientConfigs)
+	
+	client, err := factory.GetClient(i.chainID)
 	if err != nil {
 		logCtx := errors.LogContext(err)
-		logger.Sugar.With(logCtx).Fatalf("Failed to connect to Ethereum client: %v", err)
+		logger.Sugar.With(logCtx).Fatalf("Failed to get RPC client from factory: %v", err)
 	}
 	defer client.Close()
 
@@ -469,8 +512,15 @@ func (i *ChainIndexer) processBlock(ctx context.Context, ethClient *rpc.Ethereum
 	if err != nil {
 		return fmt.Errorf("failed to fetch block %d after %d attempts: %w", blockNum, DefaultRetryAttempts, err)
 	}
+	
+	// Normalize block using chain-specific normalizer
+	normalizedBlock, err := i.blockNormalizer.Normalize(block)
+	if err != nil {
+		logger.Sugar.Errorf("Failed to normalize block %d: %v", blockNum, err)
+		return fmt.Errorf("block normalization failed: %w", err)
+	}
 
-	return i.processBlockBatch(ctx, ethClient, blockHandler, block, blockNum)
+	return i.processBlockBatch(ctx, ethClient, blockHandler, normalizedBlock, blockNum)
 }
 
 // processBlockBatch creates all documents for a block using optimized batch mutations.
@@ -489,6 +539,20 @@ func (i *ChainIndexer) processBlockBatch(ctx context.Context, ethClient *rpc.Eth
 
 	for idx := range block.Transactions {
 		tx := &block.Transactions[idx]
+		
+		// Normalize transaction using chain-specific normalizer
+		normalizedTx, err := i.txNormalizer.Normalize(tx)
+		if err != nil {
+			logger.Sugar.Warnf("Failed to normalize transaction %s: %v, skipping", tx.Hash, err)
+			continue
+		}
+		
+		// Validate chain ID matches expected chain
+		if err := normalizer.ValidateChainID(normalizedTx, i.chainID); err != nil {
+			logger.Sugar.Warnf("Chain ID mismatch for tx %s: %v, skipping", tx.Hash, err)
+			continue
+		}
+		
 		fetchWg.Add(1)
 		go func(tx *types.Transaction) {
 			defer fetchWg.Done()

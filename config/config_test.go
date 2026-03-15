@@ -204,6 +204,8 @@ func TestValidateConfig_Valid(t *testing.T) {
 	cfg := &Config{}
 	cfg.DefraDB.Embedded = true
 	cfg.Indexer.StartHeight = 0
+	cfg.Chain.Name = "Ethereum"
+	cfg.Chain.Network = "Mainnet"
 
 	if err := validateConfig(cfg); err != nil {
 		t.Errorf("unexpected error: %v", err)

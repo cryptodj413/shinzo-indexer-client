@@ -1,7 +1,8 @@
 # Default configuration - environment variables will override these
 
 # Chain configuration - identifies which EVM chain to index
-# Supported chains: Ethereum, Arbitrum, Optimism, Avalanche (or any EVM chain)
+# Supported chains: Ethereum, Arbitrum, Optimism, Avalanche, Polygon
+# Supported networks: Mainnet, Sepolia (Ethereum/Arbitrum/Optimism), Fuji (Avalanche), Amoy (Polygon)
 # Collection names are derived as: {name}__{network}__Block, etc.
 chain:
   name: "Ethereum"       # Chain name (env: CHAIN_NAME)
@@ -32,6 +33,20 @@ defradb:
     # num_level_zero_tables_stall: 30  # L0 tables that trigger write stalls
     # Badger value log configuration
     value_log_file_size_mb: 128      # Size of each vlog file (smaller = more effective GC)
+# RPC configuration - supports chain-specific endpoints
+# Use this section for multi-chain deployments
+# rpc:
+#   ethereum_mainnet:
+#     node_url: "https://eth-mainnet.example.com"
+#     ws_url: "wss://eth-mainnet.example.com"
+#     api_key_env: "ETH_MAINNET_API_KEY"
+#   arbitrum_mainnet:
+#     node_url: "https://arb-mainnet.example.com"
+#     ws_url: "wss://arb-mainnet.example.com"
+#     api_key_env: "ARB_MAINNET_API_KEY"
+
+# Legacy geth configuration - still supported for backward compatibility
+# Will be used if rpc section is not present
 geth:
   node_url: "${GETH_RPC_URL}"  # Fallback
   ws_url: "${GETH_WS_URL}"
